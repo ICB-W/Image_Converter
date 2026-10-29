@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>画像フォーマット変換 | JPG・PNG・WebP・GIF</title>
+<style>
+:root{--bg:#f3f5f7;--panel:#fff;--ink:#1b2a3a;--sub:#5d6b7a;--line:#d5dbe2;--accent:#2f5bea;--accent-ink:#fff;--ok:#1d7a4a;--err:#c0392b;--hover:#e8eefc}
+@media (prefers-color-scheme:dark){:root{--bg:#10161d;--panel:#18212b;--ink:#e6ebf1;--sub:#93a1b1;--line:#2d3947;--accent:#6f93ff;--accent-ink:#0b1220;--ok:#5fd08e;--err:#ff7b6b;--hover:#1e2b44}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif;line-height:1.6}
+main{max-width:760px;margin:0 auto;padding:32px 16px 64px}
+h1{font-size:1.6rem;margin:0 0 4px;letter-spacing:.02em}
+.lead{color:var(--sub);margin:0 0 24px;font-size:.95rem}
+#drop{display:block;border:2px dashed var(--line);border-radius:14px;background:var(--panel);padding:40px 16px;text-align:center;cursor:pointer;transition:background .15s,border-color .15s}
+#drop:hover,#drop.over,#drop:focus-visible{background:var(--hover);border-color:var(--accent);outline:none}
+#drop strong{display:block;font-size:1.1rem;margin-bottom:4px}
+#drop span{color:var(--sub);font-size:.9rem}
+#file{display:none}
+.opts{display:flex;flex-wrap:wrap;gap:16px 24px;align-items:flex-end;margin:20px 0;padding:16px;background:var(--panel);border:1px solid var(--line);border-radius:12px}
+.opts label{display:flex;flex-direction:column;gap:4px;font-size:.85rem;color:var(--sub)}
+select,input[type=range]{font:inherit;color:var(--ink)}
+select{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);min-width:140px;font-size:1rem}
+#qbox{min-width:200px}
+#qbox output{color:var(--ink);font-weight:600}
+.note{font-size:.8rem;color:var(--sub);margin:-8px 0 16px}
+.bar{display:flex;gap:8px;align-items:center;justify-content:space-between;margin-bottom:8px;min-height:40px}
+.bar span{color:var(--sub);font-size:.9rem}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:7px 14px}
+button:hover{border-color:var(--accent)}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.main{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+button:disabled{opacity:.45;cursor:not-allowed}
+ul{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+li{display:grid;grid-template-columns:56px 1fr auto;gap:12px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+li img{width:56px;height:56px;object-fit:cover;border-radius:6px;background:var(--bg)}
+.ph{width:56px;height:56px;border-radius:6px;background:var(--bg)}
+.nm{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.meta{font-size:.82rem;color:var(--sub)}
+.meta.ok{color:var(--ok)}.meta.err{color:var(--err)}
+.acts{display:flex;gap:6px}
+.acts button{padding:6px 10px;font-size:.85rem}
+footer{margin-top:32px;font-size:.8rem;color:var(--sub)}
+@media (max-width:520px){li{grid-template-columns:48px 1fr}li img,.ph{width:48px;height:48px}.acts{grid-column:1/-1}}
+</style>
+</head>
+<body>
+<main>
+<h1>画像フォーマット変換</h1>
+<p class="lead">JPG・PNG・WebP・GIF を相互に変換できます。画像はお使いのブラウザの中だけで処理され、外部には送信されません。</p>
+
+<label id="drop" for="file" tabindex="0">
+  <strong>ここに画像をドラッグ&ドロップ</strong>
+  <span>またはクリックしてファイルを選択(複数可)</span>
+</label>
+<input type="file" id="file" multiple accept=".jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp,image/gif">
+
+<div class="opts">
+  <label>変換後の形式
+    <select id="fmt">
+      <option value="png">PNG (.png)</option>
+      <option value="jpg">JPG (.jpg)</option>
+      <option value="webp">WebP (.webp)</option>
+      <option value="gif">GIF (.gif)</option>
+    </select>
+  </label>
+  <label id="qbox" hidden>画質 <output id="qv">90</output>%
+    <input type="range" id="q" min="10" max="100" value="90">
+  </label>
+</div>
+<p class="note" id="note"></p>
+
+<div class="bar">
+  <span id="count">ファイルが選択されていません</span>
+  <div class="acts">
+    <button id="clear" disabled>すべて削除</button>
+    <button id="zip" class="main" disabled>ZIPでまとめて保存</button>
+  </div>
+</div>
+<ul id="list"></ul>
+
+<footer>※ アニメーションGIF・WebPは最初の1コマのみ変換されます。透過部分はJPGに変換すると白になります。</footer>
+</main>
+
+<script>
+(() => {
+"use strict";
+const $ = id => document.getElementById(id);
+const EXT = {png:"png", jpg:"jpg", webp:"webp", gif:"gif"};
+const MIME = {png:"image/png", jpg:"image/jpeg", webp:"image/webp"};
+const items = []; // {file, name, url, blob, status, msg, id}
+let seq = 0, runId = 0;
+
+const fmtSize = n => n < 1024 ? n + " B" : n < 1048576 ? (n/1024).toFixed(1) + " KB" : (n/1048576).toFixed(2) + " MB";
+const isImage = f => /\.(jpe?g|png|webp|gif)$/i.test(f.name) || /^image\/(jpeg|png|webp|gif)$/.test(f.type);
+const baseName = n => n.replace(/\.[^.]+$/, "");
+
+/* ---------- GIFエンコーダ(単一フレーム) ---------- */
+function quantize(d, n) {
+  const hist = new Uint32Array(32768); let hasT = false;
+  for (let i = 0; i < n; i++) {
+    if (d[i*4+3] < 128) { hasT = true; continue; }
+    hist[((d[i*4] >> 3) << 10) | ((d[i*4+1] >> 3) << 5) | (d[i*4+2] >> 3)]++;
+  }
+  const keys = []; for (let k = 0; k < 32768; k++) if (hist[k]) keys.push(k);
+  const max = hasT ? 255 : 256, boxes = [keys];
+  const ch = (k, c) => c === 0 ? k >> 10 : c === 1 ? (k >> 5) & 31 : k & 31;
+  while (boxes.length < max) {
+    let bi = -1, best = 1;
+    boxes.forEach((b, i) => { if (b.length > best) { best = b.length; bi = i; } });
+    if (bi < 0) break;
+    const b = boxes[bi]; let axis = 0, span = -1;
+    for (let c = 0; c < 3; c++) {
+      let lo = 31, hi = 0;
+      for (const k of b) { const v = ch(k, c); if (v < lo) lo = v; if (v > hi) hi = v; }
+      if (hi - lo > span) { span = hi - lo; axis = c; }
+    }
+    b.sort((x, y) => ch(x, axis) - ch(y, axis));
+    let tot = 0; for (const k of b) tot += hist[k];
+    let acc = 0, cut = 1;
+    for (let i = 0; i < b.length - 1; i++) { acc += hist[b[i]]; cut = i + 1; if (acc >= tot / 2) break; }
+    boxes.splice(bi, 1, b.slice(0, cut), b.slice(cut));
+  }
+  const pal = new Uint8Array(768), map = new Uint8Array(32768);
+  boxes.forEach((b, i) => {
+    let r = 0, g = 0, bl = 0, t = 0;
+    for (const k of b) { const w = hist[k]; r += (k >> 10) * w; g += ((k >> 5) & 31) * w; bl += (k & 31) * w; t += w; map[k] = i; }
+    pal[i*3] = Math.min(255, (r / t) * 8 + 4); pal[i*3+1] = Math.min(255, (g / t) * 8 + 4); pal[i*3+2] = Math.min(255, (bl / t) * 8 + 4);
+  });
+  const trans = hasT ? boxes.length : -1, idx = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    idx[i] = d[i*4+3] < 128 ? trans : map[((d[i*4] >> 3) << 10) | ((d[i*4+1] >> 3) << 5) | (d[i*4+2] >> 3)];
+  }
+  return {pal, idx, trans};
+}
+function lzw(idx) {
+  const out = []; let cur = 0, bits = 0, size = 9, next = 258, dict = new Map();
+  const emit = c => {
+    cur |= c << bits; bits += size;
+    while (bits >= 8) { out.push(cur & 255); cur >>>= 8; bits -= 8; }
+    if (next > (1 << size) - 1 && size < 12) size++;
+  };
+  emit(256);
+  let p = idx[0];
+  for (let i = 1; i < idx.length; i++) {
+    const k = idx[i], key = p * 256 + k, c = dict.get(key);
+    if (c !== undefined) { p = c; continue; }
+    emit(p);
+    if (next < 4096) dict.set(key, next++);
+    else { emit(256); dict.clear(); next = 258; size = 9; }
+    p = k;
+  }
+  emit(p); emit(257);
+  if (bits > 0) out.push(cur & 255);
+  return out;
+}
+function encodeGIF(w, h, d) {
+  const {pal, idx, trans} = quantize(d, w * h), o = [];
+  const u16 = v => o.push(v & 255, v >> 8);
+  o.push(...[..."GIF89a"].map(c => c.charCodeAt(0)));
+  u16(w); u16(h); o.push(0xF7, 0, 0);
+  for (let i = 0; i < 768; i++) o.push(pal[i]);
+  if (trans >= 0) o.push(0x21, 0xF9, 4, 1, 0, 0, trans, 0);
+  o.push(0x2C); u16(0); u16(0); u16(w); u16(h); o.push(0, 8);
+  const data = lzw(idx);
+  for (let i = 0; i < data.length; i += 255) {
+    const n = Math.min(255, data.length - i); o.push(n);
+    for (let j = 0; j < n; j++) o.push(data[i + j]);
+  }
+  o.push(0, 0x3B);
+  return new Blob([new Uint8Array(o)], {type: "image/gif"});
+}
+
+/* ---------- 画像の読み込みと変換 ---------- */
+async function load(file) {
+  if (window.createImageBitmap) { try { return await createImageBitmap(file); } catch (e) {} }
+  return new Promise((res, rej) => {
+    const u = URL.createObjectURL(file), im = new Image();
+    im.onload = () => { res(im); }; im.onerror = () => rej(new Error("読み込めません"));
+    im.src = u;
+  });
+}
+async function convert(file, fmt, quality) {
+  const img = await load(file);
+  const w = img.width, h = img.height;
+  const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+  const cx = cv.getContext("2d", {willReadFrequently: fmt === "gif"});
+  if (fmt === "jpg") { cx.fillStyle = "#fff"; cx.fillRect(0, 0, w, h); }
+  cx.drawImage(img, 0, 0);
+  if (img.close) img.close();
+  if (fmt === "gif") return encodeGIF(w, h, cx.getImageData(0, 0, w, h).data);
+  const blob = await new Promise(r => cv.toBlob(r, MIME[fmt], quality));
+  if (!blob || blob.type !== MIME[fmt]) throw new Error("このブラウザでは " + fmt.toUpperCase() + " に変換できません");
+  return blob;
+}
+async function run() {
+  const my = ++runId, fmt = $("fmt").value, q = $("q").value / 100;
+  for (const it of items) {
+    if (my !== runId) return;
+    if (it.url) { URL.revokeObjectURL(it.url); it.url = null; }
+    it.blob = null; it.status = "work"; it.msg = "変換中…"; render();
+    await new Promise(r => setTimeout(r, 15));
+    try {
+      const b = await convert(it.file, fmt, q);
+      if (my !== runId) return;
+      it.blob = b; it.url = URL.createObjectURL(b); it.status = "ok";
+      it.out = baseName(it.file.name) + "." + EXT[fmt];
+      it.msg = fmtSize(it.file.size) + " → " + fmtSize(b.size);
+    } catch (e) { it.status = "err"; it.msg = e.message || "変換に失敗しました"; }
+    render();
+  }
+}
+
+/* ---------- 表示 ---------- */
+function render() {
+  const ul = $("list"); ul.textContent = "";
+  for (const it of items) {
+    const li = document.createElement("li");
+    li.innerHTML = '<div class="ph"></div><div><div class="nm"></div><div class="meta"></div></div><div class="acts"></div>';
+    if (it.url) { const im = document.createElement("img"); im.src = it.url; im.alt = ""; li.firstChild.replaceWith(im); }
+    li.querySelector(".nm").textContent = it.out || it.file.name;
+    const m = li.querySelector(".meta"); m.textContent = it.msg; m.className = "meta " + (it.status === "ok" ? "ok" : it.status === "err" ? "err" : "");
+    const a = li.querySelector(".acts");
+    if (it.blob) { const b = document.createElement("button"); b.textContent = "保存"; b.onclick = () => save(it.blob, it.out); a.append(b); }
+    const x = document.createElement("button"); x.textContent = "削除";
+    x.onclick = () => { if (it.url) URL.revokeObjectURL(it.url); items.splice(items.indexOf(it), 1); render(); };
+    a.append(x); ul.append(li);
+  }
+  const done = items.filter(i => i.blob).length;
+  $("count").textContent = items.length ? items.length + " 件中 " + done + " 件変換済み" : "ファイルが選択されていません";
+  $("zip").disabled = !done; $("clear").disabled = !items.length;
+}
+function save(blob, name) {
+  const a = document.createElement("a"), u = URL.createObjectURL(blob);
+  a.href = u; a.download = name; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(u), 4000);
+}
+
+/* ---------- ZIP(無圧縮) ---------- */
+const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+const crc32 = b => { let c = ~0; for (let i = 0; i < b.length; i++) c = CRC[(c ^ b[i]) & 255] ^ (c >>> 8); return ~c >>> 0; };
+async function makeZip(files) {
+  const enc = new TextEncoder(), parts = [], cd = []; let off = 0;
+  const now = new Date(), dt = ((now.getFullYear() - 1980) << 9 | (now.getMonth() + 1) << 5 | now.getDate()), tm = (now.getHours() << 11 | now.getMinutes() << 5 | now.getSeconds() >> 1);
+  for (const f of files) {
+    const nm = enc.encode(f.name), data = new Uint8Array(await f.blob.arrayBuffer()), crc = crc32(data);
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true);
+    lh.setUint16(10, tm, true); lh.setUint16(12, dt, true); lh.setUint32(14, crc, true); lh.setUint32(18, data.length, true); lh.setUint32(22, data.length, true); lh.setUint16(26, nm.length, true);
+    parts.push(lh, nm, data);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true);
+    ch.setUint16(12, tm, true); ch.setUint16(14, dt, true); ch.setUint32(16, crc, true); ch.setUint32(20, data.length, true); ch.setUint32(24, data.length, true); ch.setUint16(28, nm.length, true); ch.setUint32(42, off, true);
+    cd.push(ch, nm); off += 30 + nm.length + data.length;
+  }
+  let cdSize = 0; cd.forEach(p => cdSize += p.byteLength || p.length);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true); end.setUint32(12, cdSize, true); end.setUint32(16, off, true);
+  return new Blob([...parts, ...cd, end], {type: "application/zip"});
+}
+$("zip").onclick = async () => {
+  const used = new Set(), files = [];
+  for (const it of items) {
+    if (!it.blob) continue;
+    let n = it.out, i = 2; const b = baseName(n), e = n.slice(b.length);
+    while (used.has(n)) n = b + " (" + i++ + ")" + e;
+    used.add(n); files.push({name: n, blob: it.blob});
+  }
+  save(await makeZip(files), "converted_images.zip");
+};
+
+/* ---------- 入力 ---------- */
+function add(list) {
+  const fs = [...list], ok = fs.filter(isImage), ng = fs.length - ok.length;
+  ok.forEach(f => items.push({file: f, id: ++seq, status: "work", msg: "待機中", out: ""}));
+  if (ng) alert("対応していない形式のファイルを " + ng + " 件スキップしました。\n(対応形式:JPG・PNG・WebP・GIF)");
+  if (ok.length) { render(); run(); }
+}
+const drop = $("drop");
+$("file").onchange = e => { add(e.target.files); e.target.value = ""; };
+drop.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("file").click(); } };
+["dragenter", "dragover"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => add(e.dataTransfer.files));
+window.addEventListener("dragover", e => e.preventDefault());
+window.addEventListener("drop", e => { e.preventDefault(); if (!drop.contains(e.target)) add(e.dataTransfer.files); });
+$("clear").onclick = () => { runId++; items.forEach(i => i.url && URL.revokeObjectURL(i.url)); items.length = 0; render(); };
+
+function opts() {
+  const f = $("fmt").value;
+  $("qbox").hidden = !(f === "jpg" || f === "webp");
+  $("note").textContent = f === "gif" ? "GIFは256色に減色されます(写真は粗くなることがあります)。" :
+    f === "jpg" ? "JPGは透過に対応しないため、透明部分は白になります。" : "";
+}
+let timer;
+$("fmt").onchange = () => { opts(); if (items.length) run(); };
+$("q").oninput = () => { $("qv").textContent = $("q").value; clearTimeout(timer); timer = setTimeout(() => items.length && run(), 400); };
+opts(); render();
+})();
+</script>
+</body>
+</html>
