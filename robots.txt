@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+# 公開URLに置き換えてください
+Sitemap: https://icb-w.github.io/Image_Converter/sitemap.xml
